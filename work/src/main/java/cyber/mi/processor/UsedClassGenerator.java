@@ -9,13 +9,10 @@ import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import java.io.IOException;
@@ -26,19 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
-/**
- * Generates an adapter class for a marker type annotated with {@link UseMultipleInheritance}.
- *
- * <p>The generated class:</p>
- * <ul>
- *     <li>extends the generated {@code root()Root} abstract class</li>
- *     <li>accepts {@code targets()} instances via a constructor and stores them into the MRO list</li>
- *     <li>overrides root interface abstract methods and delegates the call to the first target in MRO</li>
- * </ul>
- */
 public final class UsedClassGenerator {
     private static final String USE_MI_FQN = "cyber.mi.annotations.UseMultipleInheritance";
 
@@ -109,7 +94,7 @@ public final class UsedClassGenerator {
         String generatedSimpleName = markerSimpleName + "MI";
         String generatedFqn = packageName.isEmpty() ? generatedSimpleName : packageName + "." + generatedSimpleName;
 
-        List<ExecutableElement> rootMethods = collectRootMethods(rootInterface);
+        List<ExecutableElement> rootMethods = GeneratorSupport.collectRootMethods(rootInterface);
         try {
             JavaFileObject sourceFile = filer.createSourceFile(generatedFqn, markerType);
             try (Writer writer = sourceFile.openWriter()) {
@@ -188,22 +173,6 @@ public final class UsedClassGenerator {
         return (PackageElement) cursor;
     }
 
-    private List<ExecutableElement> collectRootMethods(TypeElement rootInterface) {
-        List<ExecutableElement> methods = ElementFilter.methodsIn(rootInterface.getEnclosedElements());
-        List<ExecutableElement> result = new ArrayList<>();
-        for (ExecutableElement method : methods) {
-            Set<Modifier> modifiers = method.getModifiers();
-            if (modifiers.contains(Modifier.STATIC) || modifiers.contains(Modifier.PRIVATE)) {
-                continue;
-            }
-            if (!modifiers.contains(Modifier.ABSTRACT)) {
-                continue;
-            }
-            result.add(method);
-        }
-        return result;
-    }
-
     private String buildClassSource(
             String packageName,
             String generatedSimpleName,
@@ -244,36 +213,29 @@ public final class UsedClassGenerator {
         for (ExecutableElement method : rootMethods) {
             List<? extends VariableElement> params = method.getParameters();
 
-            String typeParameters = buildTypeParameters(method.getTypeParameters());
+            String typeParameters = GeneratorSupport.buildTypeParameters(method.getTypeParameters());
             sb.append("    @Override\n");
             sb.append("    public ");
             if (!typeParameters.isEmpty()) {
                 sb.append(typeParameters).append(" ");
             }
             sb.append(method.getReturnType().toString()).append(" ")
-                    .append(method.getSimpleName()).append("(").append(buildParamsSignature(params)).append(")");
+                    .append(method.getSimpleName()).append("(").append(GeneratorSupport.buildParamsSignature(params)).append(")");
 
-            if (!method.getThrownTypes().isEmpty()) {
-                sb.append(" throws ");
-                sb.append(method.getThrownTypes().stream().map(TypeMirror::toString).collect(Collectors.joining(", ")));
+            String throwsClause = GeneratorSupport.buildThrowsClause(method);
+            if (!throwsClause.isEmpty()) {
+                sb.append(" ").append(throwsClause);
             }
 
             sb.append(" {\n");
             sb.append("        this.resetNextCursor();\n");
-            sb.append("        final ").append(rootRootFqn).append(" target = this.currentNextTarget();\n");
-            sb.append("        if (target == null) {\n");
-            sb.append("            throw new IllegalStateException(\"MRO exhausted for ").append(method.getSimpleName()).append("\");\n");
-            sb.append("        }\n");
-
-            String invocationArgs = params.stream()
-                    .map(VariableElement::getSimpleName)
-                    .map(Object::toString)
-                    .collect(Collectors.joining(", "));
+            String invocationArgs = GeneratorSupport.buildInvocationArgs(params);
+            String nextMethodName = GeneratorSupport.toNextMethodName(method.getSimpleName().toString());
 
             if ("void".equals(method.getReturnType().toString())) {
-                sb.append("        target.").append(method.getSimpleName()).append("(").append(invocationArgs).append(");\n");
+                sb.append("        this.").append(nextMethodName).append("(").append(invocationArgs).append(");\n");
             } else {
-                sb.append("        return target.").append(method.getSimpleName()).append("(").append(invocationArgs).append(");\n");
+                sb.append("        return this.").append(nextMethodName).append("(").append(invocationArgs).append(");\n");
             }
 
             sb.append("    }\n\n");
@@ -281,28 +243,6 @@ public final class UsedClassGenerator {
 
         sb.append("}\n");
         return sb.toString();
-    }
-
-    private String buildTypeParameters(List<? extends TypeParameterElement> typeParameters) {
-        if (typeParameters.isEmpty()) {
-            return "";
-        }
-        return "<" + typeParameters.stream().map(this::typeParameterToString).collect(Collectors.joining(", ")) + ">";
-    }
-
-    private String typeParameterToString(TypeParameterElement typeParameter) {
-        String name = typeParameter.getSimpleName().toString();
-        List<? extends TypeMirror> bounds = typeParameter.getBounds();
-        if (bounds.size() == 1 && "java.lang.Object".equals(bounds.get(0).toString())) {
-            return name;
-        }
-        return name + " extends " + bounds.stream().map(TypeMirror::toString).collect(Collectors.joining(" & "));
-    }
-
-    private String buildParamsSignature(List<? extends VariableElement> params) {
-        return params.stream()
-                .map(p -> p.asType().toString() + " " + p.getSimpleName())
-                .collect(Collectors.joining(", "));
     }
 
     private static final class UseMiValues {
