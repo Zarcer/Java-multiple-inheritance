@@ -1,9 +1,16 @@
 package smoke;
 
+import cyber.mi.MultipleInheritanceFactory;
+
 public class SmokeRun {
     public static void main(String[] args) {
-        SmokeMarkerMI mi = new SmokeMarkerMI(new SmokeA(), new SmokeB(), new SmokeC());
-        System.out.println(mi.ping("hello"));
+        A instance = MultipleInheritanceFactory.create(
+                Marker.class,
+                A.class,
+                new D(),
+                new B(),
+                new C()
+        );
+        System.out.println(instance.method());
     }
 }
-

@@ -17,3 +17,13 @@ dependencies {
 test {
     useJUnitPlatform()
 }
+
+tasks.register('compileSmoke', Exec) {
+    dependsOn tasks.named('classes')
+    commandLine 'sh', '-c', 'rm -rf build/smoke-classes && mkdir -p build/smoke-classes && javac --release 21 -cp "build/classes/java/main" -processorpath "build/classes/java/main:build/resources/main" -d build/smoke-classes smoke/*.java'
+}
+
+tasks.register('smokeRun', Exec) {
+    dependsOn tasks.named('compileSmoke')
+    commandLine 'sh', '-c', 'java -cp "build/smoke-classes:build/classes/java/main" smoke.SmokeRun'
+}
