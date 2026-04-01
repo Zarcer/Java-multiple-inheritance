@@ -1,6 +1,7 @@
 package cyber.mi.processor;
 
 import javax.annotation.processing.Filer;
+import javax.annotation.processing.FilerException;
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -45,6 +46,17 @@ public final class RootGenerator {
             try (Writer writer = sourceFile.openWriter()) {
                 writer.write(buildClassSource(packageName, generatedSimpleName, interfaceName, rootMethods));
             }
+        } catch (FilerException ex) {
+            // In incremental/isolated compilation pipelines, the same source can be requested twice.
+            // If the type already exists in the current round pipeline, keep compilation moving.
+            if (ex.getMessage() != null && ex.getMessage().contains("Attempt to recreate a file")) {
+                return;
+            }
+            messager.printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "Failed to generate root class " + generatedFqn + ": " + ex.getMessage(),
+                    rootInterface
+            );
         } catch (IOException ex) {
             messager.printMessage(
                     Diagnostic.Kind.ERROR,

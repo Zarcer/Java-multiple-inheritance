@@ -2,6 +2,7 @@ package cyber.mi.processor;
 
 import cyber.mi.annotations.UseMultipleInheritance;
 import javax.annotation.processing.Filer;
+import javax.annotation.processing.FilerException;
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -106,6 +107,16 @@ public final class UsedClassGenerator {
                         values.targetTypes
                 ));
             }
+        } catch (FilerException ex) {
+            // Gradle can re-run processors in ways that trigger duplicate source-file requests.
+            if (ex.getMessage() != null && ex.getMessage().contains("Attempt to recreate a file")) {
+                return;
+            }
+            messager.printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "Failed to generate used class " + generatedFqn + ": " + ex.getMessage(),
+                    markerType
+            );
         } catch (IOException ex) {
             messager.printMessage(
                     Diagnostic.Kind.ERROR,

@@ -18,12 +18,18 @@ test {
     useJUnitPlatform()
 }
 
-tasks.register('compileSmoke', Exec) {
+tasks.register('compileSmoke', JavaCompile) {
     dependsOn tasks.named('classes')
-    commandLine 'sh', '-c', 'rm -rf build/smoke-classes && mkdir -p build/smoke-classes && javac --release 21 -cp "build/classes/java/main" -processorpath "build/classes/java/main:build/resources/main" -d build/smoke-classes smoke/*.java'
+    source = fileTree(dir: 'smoke', include: '**/*.java')
+    destinationDirectory = layout.buildDirectory.dir('smoke-classes')
+    classpath = files(sourceSets.main.output.classesDirs)
+    options.release = 21
+    options.annotationProcessorPath = files(sourceSets.main.output.classesDirs, sourceSets.main.output.resourcesDir)
+    options.compilerArgs += ['-processor', 'cyber.mi.processor.MultipleInheritanceProcessor']
 }
 
-tasks.register('smokeRun', Exec) {
+tasks.register('smokeRun', JavaExec) {
     dependsOn tasks.named('compileSmoke')
-    commandLine 'sh', '-c', 'java -cp "build/smoke-classes:build/classes/java/main" smoke.SmokeRun'
+    mainClass = 'smoke.SmokeRun'
+    classpath = files(layout.buildDirectory.dir('smoke-classes'), sourceSets.main.output.classesDirs)
 }
